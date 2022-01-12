@@ -14,9 +14,9 @@
 #define NUM_SPEED_AVG_SAMPLES 5
 
 
-#define TIMER_COUNTER_DISTANCE_COMPUTE   50  // eg: 10ms * <50> ==>500ms
+#define TIMER_COUNTER_DISTANCE_COMPUTE   1000  // eg: 10ms * <50> ==>500ms  0.5
 
-#define DISPLAY_UPDATE_INTERVAL 100
+#define DISPLAY_UPDATE_INTERVAL 2000
 #define SPEED_UPDATE_INTERVAL 25
 #define TOP_SPEED_HIT_DISPLAY_START 20
 
@@ -82,20 +82,20 @@ volatile byte timer2_counter3;
 static void rotationInterruptHandler()
 {
 
-//  sensrDebInt = timer2_counter1 - oldTimer2Ct1;
-//  if (sensrDebInt <= 10  && speedTick >= 1) {
-//    speedTick = oldTicks;
-//    oldTimer2Ct1=timer2_counter1;
-//    // Serial.println("int bad");
-//
-//  }
-//  else {
+  sensrDebInt = timer2_counter1 - oldTimer2Ct1;
+  if (sensrDebInt <5  && speedTick >= 1) {
+    speedTick = oldTicks;
+    oldTimer2Ct1=timer2_counter1;
+    // Serial.println("int bad");
+
+  }
+  else {
     speedTick++;
-//    oldTimer2Ct1=timer2_counter1;
-//    // Serial.println("int good");
-//  }
-//  oldTimer2Ct1=timer2_counter1;
-//  oldTicks = speedTick;
+    oldTimer2Ct1=timer2_counter1;
+    // Serial.println("int good");
+  }
+  oldTimer2Ct1=timer2_counter1;
+  oldTicks = speedTick;
 
 }
 
@@ -115,7 +115,7 @@ uint8_t speedScale = 0;
 void computeDistanceCovered();
 void computeSpeed();
 
-byte reload = 0x9C;
+byte reload = 0xFA;
 ISR(TIMER2_COMPA_vect)
 {
   
@@ -158,15 +158,16 @@ ISR(TIMER2_COMPA_vect)
   Hence value of OCR register will be set to: 10ms/64us = 156.25 ->156 (whole number)  = 0x9C
 */
 
+
 void setUpTimer2ForDistanceCompute() {
   cli();
   TCCR0B = 0;
   OCR2A = reload;
   TCCR2A = 1 << WGM21;
-  TCCR2B = (1 << CS22) | (1 << CS21) | (1 << CS20);
+  TCCR2B = (1 << CS01) | (1 << CS00);
   TIMSK2 = (1 << OCIE2A);
   sei();
-  Serial.println("TIMER2 Setup Finished.");
+  Serial.println("TIMER2 ticks ever 0.5ms!! Setup Finished.");
 
 }
 

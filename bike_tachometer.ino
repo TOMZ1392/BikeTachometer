@@ -11,16 +11,19 @@
 #define EEPROM_DISTVAL_LOC 0
 #define EEPROM_WRITE_INTERVAL  60
 
-#define NUM_SPEED_AVG_SAMPLES 5
+#define NUM_SPEED_AVG_SAMPLES 4
 
+#define TIMER_INTERRUPT_INTERVAL 0.5f //timer interrupt interval in ms, refer setUpTimer2ForDistanceCompute
 
-#define TIMER_COUNTER_DISTANCE_COMPUTE   50  // eg: 10ms * <50> ==>500ms
+#define TIMER_COUNTER_DISTANCE_COMPUTE   1000  // eg: 10ms * <50> ==>500ms 
 
-#define DISPLAY_UPDATE_INTERVAL 100
-#define SPEED_UPDATE_INTERVAL 25
+#define DISPLAY_UPDATE_INTERVAL 1400
+#define SPEED_UPDATE_INTERVAL 1200
 #define TOP_SPEED_HIT_DISPLAY_START 20
 
+//simulation block
 //#define SERIAL_TEST_ENABLED
+
 
 // On an arduino UNO:       A4(SDA), A5(SCL)
 
@@ -68,34 +71,34 @@ double distance = 0.0;
 float displaySpeed = 0;
 uint32_t startTimeDisp = 0;
 
-volatile uint8_t sensrDebInt;
+volatile uint16_t sensrDebInt;
 uint16_t topSpeed = 0;
 boolean topSpeedFlag = false;
 boolean updateDisplayFlag = false;
 
-volatile uint8_t oldTimer2Ct1;
+volatile uint16_t oldTimer2Ct1;
 
-volatile byte timer2_counter1;
-volatile byte timer2_counter2;
-volatile byte timer2_counter3;
+volatile uint16_t timer2_counter1;
+volatile uint16_t timer2_counter2;
+volatile uint16_t timer2_counter3;
 
 static void rotationInterruptHandler()
 {
 
-//  sensrDebInt = timer2_counter1 - oldTimer2Ct1;
-//  if (sensrDebInt <= 10  && speedTick >= 1) {
-//    speedTick = oldTicks;
-//    oldTimer2Ct1=timer2_counter1;
-//    // Serial.println("int bad");
-//
-//  }
-//  else {
+  sensrDebInt = timer2_counter1 - oldTimer2Ct1;
+  if (sensrDebInt < 2 && speedTick >= 1) {
+    speedTick = oldTicks;
+    oldTimer2Ct1 = timer2_counter1;
+    // Serial.println("int bad");
+
+  }
+  else {
     speedTick++;
-//    oldTimer2Ct1=timer2_counter1;
-//    // Serial.println("int good");
-//  }
-//  oldTimer2Ct1=timer2_counter1;
-//  oldTicks = speedTick;
+    oldTimer2Ct1 = timer2_counter1;
+    // Serial.println("int good");
+  }
+  oldTimer2Ct1 = timer2_counter1;
+  oldTicks = speedTick;
 
 }
 
@@ -115,10 +118,10 @@ uint8_t speedScale = 0;
 void computeDistanceCovered();
 void computeSpeed();
 
-byte reload = 0x9C;
+byte reload = 0xFA;
 ISR(TIMER2_COMPA_vect)
 {
-  
+
   timer2_counter1++;
   timer2_counter2++;
   timer2_counter3++;
@@ -127,7 +130,7 @@ ISR(TIMER2_COMPA_vect)
   if (timer2_counter1 == TIMER_COUNTER_DISTANCE_COMPUTE)
   {
     timer2_counter1 = 0;
-    oldTimer2Ct1=0;// round interrupt error handle
+    oldTimer2Ct1 = 0; // round interrupt error handle
 #ifdef SERIAL_TEST_ENABLED
     speedTick += speedScale;
 #endif
@@ -150,7 +153,7 @@ ISR(TIMER2_COMPA_vect)
 }
 
 /*
- * https://microcontrollerslab.com/arduino-timer-interrupts-tutorial/
+   https://microcontrollerslab.com/arduino-timer-interrupts-tutorial/
    timer2
    System clock is 16Mhz and prescalar is 1024 for generating clock of 10ms
   Speed of Timer2 = 16MHz/1024 = 15.625 KHz
@@ -158,15 +161,16 @@ ISR(TIMER2_COMPA_vect)
   Hence value of OCR register will be set to: 10ms/64us = 156.25 ->156 (whole number)  = 0x9C
 */
 
+
 void setUpTimer2ForDistanceCompute() {
   cli();
   TCCR0B = 0;
   OCR2A = reload;
   TCCR2A = 1 << WGM21;
-  TCCR2B = (1 << CS22) | (1 << CS21) | (1 << CS20);
+  TCCR2B = (1 << CS01) | (1 << CS00);
   TIMSK2 = (1 << OCIE2A);
   sei();
-  Serial.println("TIMER2 Setup Finished.");
+  Serial.println("TIMER2 ticks ever 0.5ms !! Setup Finished.");
 
 }
 
@@ -213,7 +217,7 @@ void updateDisplay(float spd, double dist, bool tripFlg, float power)
   display.setCursor(0, 5);
 
   if (topSpeedFlag) {
-    display.print((uint32_t)(topSpeed*3.6));
+    display.print((uint32_t)(topSpeed * 3.6));
     display.setTextSize(1);
     display.println("kmph TOP");
   }
@@ -254,13 +258,14 @@ float distanceCovered = 0.0;
 float prvDistanceCovered = 0.0;
 float currentSpeed = 0.0;
 
-float currentAcceleration=0;
+float currentAcceleration = 0;
 
 
 void computeDistanceCovered()
 {
+
   uint32_t currentTicks = speedTick - oldSpeedTick;
-  double dist = (1.96 * (double)currentTicks);
+  double dist = (0.98 * (double)currentTicks);
   distanceCovered += dist;
   oldSpeedTick = speedTick;
 }
@@ -269,18 +274,29 @@ void computeDistanceCovered()
 
 float speedSumForAvg = 0.0;
 float averageSpeed = 0.0;
-float prevAvgSpeed=0.0;
+float prevAvgSpeed = 0.0;
+
 void computeSpeed()
 {
+
+
+  //  Serial.println("Spdupd");
   static uint8_t speedAvgSamples;
-  prevAvgSpeed=averageSpeed;
-  currentSpeed = ((distanceCovered - prvDistanceCovered) * 1000) / (SPEED_UPDATE_INTERVAL*10);
-  if(topSpeed<prevAvgSpeed && distanceCovered> 20.00 )
-  { 
-    topSpeed=prevAvgSpeed;
-   }
-  //currentAcceleration=((currentSpeed-prevCurrentSpeed)*1000)/(SPEED_UPDATE_INTERVAL*10);
-  
+  prevAvgSpeed = averageSpeed;
+  currentSpeed = ((distanceCovered - prvDistanceCovered) * 1000) / ((float)SPEED_UPDATE_INTERVAL * (float)TIMER_INTERRUPT_INTERVAL);
+  //  Serial.print(distanceCovered);
+  //  Serial.print('-');
+  //  Serial.print(prvDistanceCovered);
+  //   Serial.print('=');
+  //   Serial.println(currentSpeed);
+
+
+  if (topSpeed < prevAvgSpeed && distanceCovered > 20.00 )
+  {
+    topSpeed = prevAvgSpeed;
+  }
+  //currentAcceleration=((currentSpeed-prevCurrentSpeed)*1000)/((float)SPEED_UPDATE_INTERVAL*(float)TIMER_INTERRUPT_INTERVAL);
+
   prvDistanceCovered = distanceCovered;
 
   speedSumForAvg += currentSpeed;
@@ -291,7 +307,7 @@ void computeSpeed()
     averageSpeed = speedSumForAvg / NUM_SPEED_AVG_SAMPLES;
     speedAvgSamples = 0;
     speedSumForAvg = 0;
-    currentAcceleration=((averageSpeed-prevAvgSpeed)*1000)/(SPEED_UPDATE_INTERVAL*10);
+    // currentAcceleration=((averageSpeed-prevAvgSpeed)*1000)/(SPEED_UPDATE_INTERVAL*10);
   }
 
 }
@@ -317,28 +333,34 @@ void loop()
   }
 #endif
   if (updateDisplayFlag) {
+    //Serial.println("DisplayUpd");
     topSpeedDisplayHitCtr++;
-    float tmpSpeed = prevAvgSpeed;
+    static float tmpSpeed;
     if (tmpSpeed < averageSpeed) {
-      tmpSpeed += (averageSpeed - tmpSpeed) / 2;
+      //tmpSpeed += (averageSpeed - tmpSpeed) / 2;
+      tmpSpeed += 0.3;
+      if (averageSpeed < 1) {
+        tmpSpeed = 0;
+      }
     }
     else if (tmpSpeed > averageSpeed) {
-      tmpSpeed -= (tmpSpeed - averageSpeed) / 2;
+      // tmpSpeed -= (tmpSpeed - averageSpeed) / 2;
+      tmpSpeed -= 0.3;
     }
     else {
-
+      tmpSpeed = averageSpeed;
     }
-    if(topSpeedDisplayHitCtr > TOP_SPEED_HIT_DISPLAY_START && topSpeedDisplayHitCtr<= TOP_SPEED_HIT_DISPLAY_START+3){
-      topSpeedFlag=true;
+    if (topSpeedDisplayHitCtr > TOP_SPEED_HIT_DISPLAY_START && topSpeedDisplayHitCtr <= TOP_SPEED_HIT_DISPLAY_START + 3) {
+      topSpeedFlag = true;
     }
-    else if(topSpeedDisplayHitCtr>TOP_SPEED_HIT_DISPLAY_START+3){
-       topSpeedDisplayHitCtr=0;
-       topSpeedFlag=false;
-      }
-    else{
-      topSpeedFlag=false;
-      }
-    updateDisplay(tmpSpeed, distanceCovered, false, currentAcceleration);
+    else if (topSpeedDisplayHitCtr > TOP_SPEED_HIT_DISPLAY_START + 3) {
+      topSpeedDisplayHitCtr = 0;
+      topSpeedFlag = false;
+    }
+    else {
+      topSpeedFlag = false;
+    }
+    updateDisplay(tmpSpeed, distanceCovered, false, (float)speedTick);
     updateDisplayFlag = false;
   }
 
